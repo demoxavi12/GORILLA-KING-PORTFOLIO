@@ -187,8 +187,14 @@ export class SystemField {
     const c = this.ctx;
     // motion trails
     c.globalCompositeOperation = "source-over";
-    c.fillStyle = dt === 0 ? "rgba(8,8,8,1)" : "rgba(8,8,8,0.24)";
-    c.fillRect(0, 0, this.w, this.h);
+    // transparent trails: fade what was drawn instead of painting black (the ink shows through)
+    if (dt === 0) c.clearRect(0, 0, this.w, this.h);
+    else {
+      c.globalCompositeOperation = "destination-out";
+      c.fillStyle = "rgba(0,0,0,0.24)";
+      c.fillRect(0, 0, this.w, this.h);
+      c.globalCompositeOperation = "source-over";
+    }
     const P = this.pointer;
     const born = (n: Node) => Math.min(1, Math.max(0, (this.time - n.born) / 0.5));
 

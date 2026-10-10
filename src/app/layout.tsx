@@ -56,6 +56,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               "document.documentElement.classList.add('js');try{if('scrollRestoration' in history)history.scrollRestoration='manual'}catch(e){}window.scrollTo(0,0);addEventListener('pageshow',function(e){if(e.persisted)location.reload()});var k=function(){window.__kageSkip=1};addEventListener('keydown',k,{once:true});addEventListener('pointerdown',k,{once:true});",
           }}
         />
+        {/* Without JS the server-rendered intro wall would never leave. */}
+        <noscript>
+          <style>{"[data-intro]{display:none!important}"}</style>
+        </noscript>
       </head>
       <body>
         <a href="#main" className="sr-only-focusable meta fixed left-3 top-3 z-[100] bg-bone px-3 py-2 text-ink">

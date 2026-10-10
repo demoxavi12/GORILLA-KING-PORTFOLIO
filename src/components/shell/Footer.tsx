@@ -32,7 +32,7 @@ export function Footer() {
       <div className="grid grid-cols-12 items-end gap-x-[var(--gutter)] gap-y-8 border-t rule pt-6">
         <p data-ft className="meta col-span-12 max-w-[60ch] leading-[1.7] text-ash md:col-span-8">
           Designed, engineered &amp; photographed by <span className="text-bone">{site.name}</span> · Next.js · GSAP · Lenis · Three.js · Set in Anton
-          &amp; Geist · The shadow is drawn in code
+          &amp; Geist · The night is drawn in code
         </p>
 
         {/* The seal */}

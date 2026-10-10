@@ -69,3 +69,20 @@ The old site's identity is retired: the lime, the "SACHIN" wordmark and the hero
 - **Archive:** ~1.45× larger frames. Two lanes pass close to the lens. Far frames are softened by depth-of-field blur, the frame nearest the cursor swells, and an iris closes on the vanishing point.
 - **About:** the single quiet moment. A dark, nearly empty frame, an ember point left by the iris, one statement.
 - **Final scene:** no shadow figure here. The moon is reduced to a silver ring, with a letterbox slit of one photograph that opens near the cursor. The email is fitted to the frame width and its lines drift apart with the cursor. The footer is one credits line plus a vermillion 終 seal.
+
+---
+
+## V2.2 — cinematic refinement
+
+- **No blank start:** the intro's first frame (the photo wall, with contact-sheet indices and 影の記録) is server-rendered, laid out in CSS, and starts flipping on hydration. Photos stream in, and flips use only loaded photos. It's hidden for reduced motion and when JS is off.
+- **Moon return replaces the runner:** after the name, the moon rises and holds, then travels on an arc to land exactly on the 3D moon (both are painted by `paintMoon`). The black plate dissolves while the night assembles layer by layer (sky → clouds → mountains → city → poles → character → foreground → embers). Then the name descends letter by letter, followed by the supporting text.
+- **Hero character (Ichigo, from a supplied manga reference):** asset-based. `scripts/cutout-character.py` turns the reference into `public/characters/hero-body.webp` and `hero-sword.webp` (blade separated, fist pivot), and `src/anime/Character.ts` renders it:
+  - **Aura:** smoke built from the blurred silhouette.
+  - **Body:** wind displaced through the coat and hair only, with a moon rim light.
+  - **Sword:** pivots at the fist.
+  - **Encounter (hover dwell or tap):** notice → anticipation → blade rises → ripple, slash and ember burst → rest, followed by a cooldown.
+
+  ⚠ This is a copyrighted character. Replace the reference with licensed or commissioned art before publishing; re-running the script swaps it without code changes.
+- **Work environment:** a raw-WebGL ink field (`src/anime/InkField.ts`) under the system field. Each project has its own flow, turbulence and red. A cut floods vermillion along the slash, and the cursor parts the ink.
+- **Capabilities:** active rows. A vermillion field wipes in, one of Sabya's photographs emerges through a slash mask and drifts with the pointer, and the other rows recede. The row height never changes. Works with hover, focus and tap.
+- **Route transition:** the curtain is now dragged by a vermillion slash edge. The generic ninja is gone from the site.

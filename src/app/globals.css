@@ -252,3 +252,10 @@ html.js [data-reveal] {
   0% { transform: translateX(-110%); }
   100% { transform: translateX(220%); }
 }
+
+/* The intro is server-rendered (its first frame is the photo wall). Reduced motion never shows it. */
+@media (prefers-reduced-motion: reduce) {
+  [data-intro] {
+    display: none !important;
+  }
+}

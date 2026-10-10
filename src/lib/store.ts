@@ -52,3 +52,22 @@ export function scrollToTarget(target: string | number | HTMLElement, immediate 
 
 export const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Intro ↔ hero handoff. The intro's moon lands on the 3D moon and the world
+ * assembles around it; values requested before the scene exists are queued.
+ */
+type HeroWorld = {
+  setAssemble(p: number): void;
+  setMoonPresence(v: number): void;
+  moonScreen(): { x: number; y: number; d: number };
+};
+export const heroStage: { world: HeroWorld | null; assemble: number; moon: number } = { world: null, assemble: 0, moon: 0 };
+export function setHeroAssemble(p: number) {
+  heroStage.assemble = p;
+  heroStage.world?.setAssemble(p);
+}
+export function setHeroMoon(v: number) {
+  heroStage.moon = v;
+  heroStage.world?.setMoonPresence(v);
+}

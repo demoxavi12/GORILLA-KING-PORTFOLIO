@@ -4,10 +4,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { usePathname, useRouter } from "next/navigation";
 import { gsap, ScrollTrigger } from "@/motion/gsap";
 import { scrollToTarget, ui } from "@/lib/store";
-import { drawNinja, runPose, FIGURE_HEIGHT } from "@/anime/ninja";
 
 /**
- * Route transitions — the shadow dash (signature, docs/18 §3).
+ * Route transitions — the slash curtain.
  * Cover:  the runner sprints across; a black curtain is dragged in behind him.
  * Swap:   the route changes beneath the curtain (project title held on it).
  * Reveal: he crosses again and the curtain tears away behind his heels.
@@ -44,8 +43,6 @@ export function TransitionProvider({ children }: { children: React.ReactNode }) 
       c.height = H * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.style.visibility = "visible";
-      const scale = Math.min(H * 0.36, W * 0.5) / FIGURE_HEIGHT;
-      const ground = H * 0.7;
       const s = { x: -0.25 * W };
       const lines: { x: number; y: number; len: number; a: number }[] = [];
       const t0 = performance.now();
@@ -55,10 +52,10 @@ export function TransitionProvider({ children }: { children: React.ReactNode }) 
         raf = requestAnimationFrame(frame);
         const t = (performance.now() - t0) / 1000;
         ctx.clearRect(0, 0, W, H);
-        const heel = s.x - 30 * scale;
+        const heel = s.x;
         el.style.clipPath = mode === "cover" ? `inset(0 ${Math.max(0, W - heel)}px 0 0)` : `inset(0 0 0 ${Math.max(0, heel)}px)`;
         for (let i = 0; i < 3; i++)
-          lines.push({ x: s.x - Math.random() * 80 * scale, y: ground - Math.random() * FIGURE_HEIGHT * scale * 1.1, len: 60 + Math.random() * 300, a: 0.5 });
+          lines.push({ x: s.x - Math.random() * 60, y: Math.random() * H, len: 60 + Math.random() * 300, a: 0.5 });
         ctx.lineWidth = 1;
         for (let i = lines.length - 1; i >= 0; i--) {
           const l = lines[i];
@@ -74,12 +71,21 @@ export function TransitionProvider({ children }: { children: React.ReactNode }) 
           ctx.lineTo(l.x - l.len, l.y);
           ctx.stroke();
         }
-        const p = t * Math.PI * 2 * 3.4;
-        [2, 1].forEach((k) =>
-          drawNinja(ctx, runPose(p - k * 0.45), { x: s.x - k * 60 * scale, y: ground, scale, t: t - k * 0.04, color: "#e0482c", alpha: 0.3 / k }),
-        );
-        // He runs over both the curtain (black) and the page — a bone rim keeps him visible on black.
-        drawNinja(ctx, runPose(p), { x: s.x, y: ground, scale, t, color: "#050505", rim: "rgba(241,239,232,0.85)" });
+        // the curtain's leading edge — a vermillion slash with a hot core, slightly curved
+        const bow = Math.sin(t * 9) * 6;
+        ctx.lineCap = "round";
+        for (const [w, col] of [
+          [14, "rgba(224,72,44,0.18)"],
+          [5, "rgba(224,72,44,0.85)"],
+          [1.5, "rgba(250,240,228,0.95)"],
+        ] as const) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = w;
+          ctx.beginPath();
+          ctx.moveTo(s.x + H * 0.08, -10);
+          ctx.quadraticCurveTo(s.x + 18 + bow, H * 0.5, s.x - H * 0.08, H + 10);
+          ctx.stroke();
+        }
       };
       frame();
       gsap.to(s, {

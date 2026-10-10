@@ -1,16 +1,19 @@
 import * as THREE from "three";
 import { paintBranch, paintCity, paintClouds, paintGlow, paintMoon, paintMountains, paintPoles, paintSky } from "./paint";
-import { drawNinja, perchPose, FIGURE_HEIGHT } from "./ninja";
+import { HeroCharacter } from "./Character";
 
 /**
  * The hero world: painted depth layers in a real perspective scene.
  *  - camera parallax follows the cursor (true depth, not CSS offsets)
  *  - embers + ash drift on the wind and swirl away from the cursor
- *  - the shadow perches on a utility pole and turns to watch the cursor
+ *  - the character stands on the perch pole against the moon (see Character.ts)
+ *  - `setAssemble(p)` builds the world layer by layer (intro handoff)
+ *  - `moonScreen()` reports where the moon is, so the intro's moon can land on it
  *  - `setDive(p)` flies the camera through the layers into the moon
  */
 
-type Layer = { mesh: THREE.Mesh; z: number; drift?: number; base: THREE.Vector3 };
+/** order: assembly sequence (-1 = the moon, driven separately); rise: lifts from below while assembling */
+type Layer = { mesh: THREE.Mesh; z: number; drift?: number; base: THREE.Vector3; order: number; rise: number };
 
 const FOV = 38;
 const CAM_Z = 10;
@@ -32,11 +35,12 @@ const PARTICLE_VS = /* glsl */ `
 const PARTICLE_FS = /* glsl */ `
   varying vec3 vTint;
   varying float vAlpha;
+  uniform float uGlobal;
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     float d = length(c);
     float a = smoothstep(0.5, 0.0, d);
-    gl_FragColor = vec4(vTint, a * a * vAlpha);
+    gl_FragColor = vec4(vTint, a * a * vAlpha * uGlobal);
   }
 `;
 
@@ -61,14 +65,13 @@ export class NightScene {
   private count: number;
   private tmp = new THREE.Vector3();
 
-  // ninja
-  private ninjaCanvas = document.createElement("canvas");
-  private ninjaCtx = this.ninjaCanvas.getContext("2d")!;
-  private ninjaTex!: THREE.CanvasTexture;
-  private ninjaMesh!: THREE.Mesh;
-  private ninjaDrop = 1; // 1 = above frame, 0 = landed
-  private ninjaWorld = new THREE.Vector3();
+  // character + assembly
+  private character!: HeroCharacter;
+  private perchWorld = new THREE.Vector3();
   private moonPos = new THREE.Vector3();
+  private moonSize = 1;
+  private assemble = 0;
+  private moonPresence = 0;
 
   constructor(private host: HTMLElement, opts: { particles: number; dpr: number }) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
@@ -98,7 +101,14 @@ export class NightScene {
     return t;
   }
 
-  private plane(c: HTMLCanvasElement, z: number, width: number, height: number, y = 0, opts: { additive?: boolean; drift?: number } = {}) {
+  private plane(
+    c: HTMLCanvasElement,
+    z: number,
+    width: number,
+    height: number,
+    y = 0,
+    opts: { additive?: boolean; drift?: number; order?: number; rise?: number } = {},
+  ) {
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(width, height),
       new THREE.MeshBasicMaterial({
@@ -109,8 +119,10 @@ export class NightScene {
       }),
     );
     m.position.set(0, y, z);
+    // explicit back-to-front order: far layers first (transparent sorting is unreliable across such different plane sizes)
+    m.renderOrder = Math.round(100 + z);
     this.scene.add(m);
-    this.layers.push({ mesh: m, z, drift: opts.drift, base: m.position.clone() });
+    this.layers.push({ mesh: m, z, drift: opts.drift, base: m.position.clone(), order: opts.order ?? 0, rise: opts.rise ?? 0 });
     return m;
   }
 
@@ -133,7 +145,7 @@ export class NightScene {
 
     // Sky
     let f = layer(-70);
-    this.plane(paintSky(texW, texW / (f.w / f.h)), -70, f.w, f.h);
+    this.plane(paintSky(texW, texW / (f.w / f.h)), -70, f.w, f.h, 0, { order: 0 });
 
     // Moon + glow
     const moonZ = -55;
@@ -141,27 +153,28 @@ export class NightScene {
     const moonSize = f.h * (portrait ? 0.42 : 0.62);
     const moonX = portrait ? f.w * 0.05 : f.w * 0.16;
     const moonY = f.h * (portrait ? 0.17 : 0.12);
-    const glow = this.plane(paintGlow(512, "rgba(236,230,214,ALPHA)", 0.8), moonZ - 1, moonSize * 3.2, moonSize * 3.2, moonY, { additive: true });
+    const glow = this.plane(paintGlow(512, "rgba(236,230,214,ALPHA)", 0.8), moonZ - 1, moonSize * 3.2, moonSize * 3.2, moonY, { additive: true, order: -1 });
     glow.position.x = moonX;
-    const ember = this.plane(paintGlow(512, "rgba(224,72,44,ALPHA)", 0.35), moonZ - 0.5, moonSize * 2.2, moonSize * 2.2, moonY - moonSize * 0.1, { additive: true });
+    const ember = this.plane(paintGlow(512, "rgba(224,72,44,ALPHA)", 0.35), moonZ - 0.5, moonSize * 2.2, moonSize * 2.2, moonY - moonSize * 0.1, { additive: true, order: -1 });
     ember.position.x = moonX;
-    const moon = this.plane(paintMoon(1024), moonZ, moonSize, moonSize, moonY);
+    const moon = this.plane(paintMoon(1024), moonZ, moonSize, moonSize, moonY, { order: -1 });
     moon.position.x = moonX;
     this.moonPos.copy(moon.position);
+    this.moonSize = moonSize;
     this.layers.slice(-3).forEach((l) => l.base.copy(l.mesh.position));
 
     // Clouds crossing the moon
     f = layer(-46);
-    this.plane(paintClouds(texW, texW / (f.w / f.h), 9, [0.3, 0.42]), -46, f.w, f.h, 0, { drift: 0.18 });
+    this.plane(paintClouds(texW, texW / (f.w / f.h), 9, [0.55, 0.62]), -46, f.w, f.h, 0, { drift: 0.18, order: 1 });
     f = layer(-36);
-    this.plane(paintClouds(texW, texW / (f.w / f.h), 14, [0.4, 0.5]), -36, f.w, f.h, 0, { drift: -0.32 });
+    this.plane(paintClouds(texW, texW / (f.w / f.h), 14, [0.6, 0.68]), -36, f.w, f.h, 0, { drift: -0.32, order: 1.4 });
 
     // Mountains + city
     f = layer(-30);
-    this.plane(paintMountains(texW, texW / (f.w / f.h)), -30, f.w, f.h, -f.h * 0.06);
+    this.plane(paintMountains(texW, texW / (f.w / f.h)), -30, f.w, f.h, -f.h * 0.06, { order: 2, rise: f.h * 0.12 });
     f = layer(-18);
     const cityH = f.h * 0.42;
-    this.plane(paintCity(texW, (texW / f.w) * cityH), -18, f.w, cityH, -f.h * 0.5 + cityH / 2);
+    this.plane(paintCity(texW, (texW / f.w) * cityH), -18, f.w, cityH, -f.h * 0.5 + cityH / 2, { order: 2.8, rise: cityH * 0.45 });
 
     // Poles + wires, with the perch
     const poleZ = -7;
@@ -176,24 +189,23 @@ export class NightScene {
     const poleXs = portrait ? [0.08, perchX] : [0.04, 0.33, perchX, 0.97];
     const perchIndex = portrait ? 1 : 2;
     const { canvas: poles, perch } = paintPoles(pw, ph, poleXs, perchIndex, perchTop);
-    this.plane(poles, poleZ, f.w, f.h);
+    this.plane(poles, poleZ, f.w, f.h, 0, { order: 3.5, rise: f.h * 0.18 });
     // perch in world coords
-    this.ninjaWorld.set((perch.x / pw - 0.5) * f.w, (0.5 - perch.y / ph) * f.h, poleZ + 0.05);
+    this.perchWorld.set((perch.x / pw - 0.5) * f.w, (0.5 - perch.y / ph) * f.h, poleZ + 0.05);
 
-    // The ninja: a live canvas texture, feet on the pole top
-    const figWorld = f.h * (portrait ? 0.085 : 0.11);
-    this.ninjaCanvas.width = 512;
-    this.ninjaCanvas.height = 512;
-    this.ninjaTex = this.tex(this.ninjaCanvas);
-    this.ninjaMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(figWorld * 2.2, figWorld * 2.2),
-      new THREE.MeshBasicMaterial({ map: this.ninjaTex, transparent: true, depthWrite: false }),
-    );
-    this.scene.add(this.ninjaMesh);
+    // The character: stands on the perch, silhouetted against the moon
+    const visible = this.frame(poleZ).h;
+    // textures arrive async: if nothing is animating (reduced motion), redraw the still frame
+    this.character = new HeroCharacter(visible * (portrait ? 0.27 : 0.4), () => {
+      if (!this.running) this.tick(0);
+    });
+    this.character.placeOn(this.perchWorld);
+    this.character.onRelease = (o) => this.impulse(o);
+    this.scene.add(this.character.group);
 
     // Foreground branch
     f = layer(-1);
-    this.plane(paintBranch(texW, texW / (f.w / f.h)), -1, f.w, f.h);
+    this.plane(paintBranch(texW, texW / (f.w / f.h)), -1, f.w, f.h, 0, { order: 4.4, rise: -f.h * 0.15 });
 
     this.buildParticles();
     this.resize();
@@ -227,11 +239,13 @@ export class NightScene {
       new THREE.ShaderMaterial({
         vertexShader: PARTICLE_VS,
         fragmentShader: PARTICLE_FS,
+        uniforms: { uGlobal: { value: 0 } },
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       }),
     );
+    this.points.renderOrder = 300; // embers drift in front of the figure too
     this.scene.add(this.points);
   }
 
@@ -273,9 +287,45 @@ export class NightScene {
     this.dive = p;
   }
 
-  /** 1 → hidden above the pole, 0 → landed. */
-  setNinjaDrop(v: number) {
-    this.ninjaDrop = v;
+  /** 0 → only the night sky, 1 → the whole world in place. */
+  setAssemble(p: number) {
+    this.assemble = p;
+  }
+
+  /** The moon (and its glow), handed over from the intro's moon. */
+  setMoonPresence(v: number) {
+    this.moonPresence = v;
+  }
+
+  /** Where the moon disc is on screen right now (px, relative to the host). */
+  moonScreen() {
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const c = this.tmp.copy(this.moonPos).project(cam);
+    const cx = (c.x * 0.5 + 0.5) * this.w;
+    const cy = (-c.y * 0.5 + 0.5) * this.h;
+    const e = this.tmp.set(this.moonPos.x + this.moonSize * 0.48, this.moonPos.y, this.moonPos.z).project(cam);
+    const ex = (e.x * 0.5 + 0.5) * this.w;
+    return { x: cx, y: cy, d: Math.abs(ex - cx) * 2 };
+  }
+
+  /** Tap (touch): lets the character be encountered without hover. */
+  tap(clientX: number, clientY: number) {
+    const rect = this.host.getBoundingClientRect();
+    this.character.tap(clientX - rect.left, clientY - rect.top, this.camera, this.w, this.h);
+  }
+
+  /** The release beat: embers near the blade are blown outward. */
+  private impulse(origin: THREE.Vector3) {
+    for (let i = 0; i < this.count; i++) {
+      const k = i * 3;
+      const dx = this.pos[k] - origin.x;
+      const dy = this.pos[k + 1] - origin.y;
+      const d = Math.hypot(dx, dy) + 0.3;
+      const f = Math.min(9, 26 / (d * d));
+      this.vel[k] += (dx / d) * f - f * 0.6;
+      this.vel[k + 1] += (dy / d) * f;
+    }
   }
 
   start() {
@@ -365,34 +415,29 @@ export class NightScene {
     }
     (this.points.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
 
-    // Ninja — perched, watching the cursor
-    const ctx = this.ninjaCtx;
-    const cw = this.ninjaCanvas.width;
-    ctx.clearRect(0, 0, cw, cw);
-    const nx = this.ninjaWorld.x;
-    this.tmp.copy(this.ninjaWorld).project(cam);
-    const lookX = p.active ? p.x - this.tmp.x : -1;
-    const lookY = p.active ? p.y - this.tmp.y : 0;
-    const facing: 1 | -1 = lookX < 0 ? -1 : 1;
-    drawNinja(ctx, perchPose(t, { x: lookX, y: Math.max(-1, Math.min(1, lookY * 1.5)) }), {
-      x: cw / 2,
-      y: cw * 0.5,
-      scale: (cw * 0.42) / FIGURE_HEIGHT,
-      facing,
-      t,
-      color: "#030304",
-    });
-    this.ninjaTex.needsUpdate = true;
-    const size = (this.ninjaMesh.geometry as THREE.PlaneGeometry).parameters.height;
-    const drop = this.ninjaDrop;
-    this.ninjaMesh.position.set(nx, this.ninjaWorld.y + size * 0.0 + drop * size * 4, this.ninjaWorld.z);
-    (this.ninjaMesh.material as THREE.MeshBasicMaterial).opacity = 1 - drop * 0.6;
+    // Assembly: the world builds itself layer by layer
+    const A = this.assemble;
+    for (const l of this.layers) {
+      const mat = l.mesh.material as THREE.MeshBasicMaterial;
+      if (l.order < 0) {
+        mat.opacity = this.moonPresence;
+        continue;
+      }
+      const k = Math.min(1, Math.max(0, (A * 5.2 - l.order) / 1.1));
+      const e = 1 - Math.pow(1 - k, 3);
+      mat.opacity = e;
+      if (l.rise) l.mesh.position.y = l.base.y - (1 - e) * l.rise;
+    }
+    (this.points.material as THREE.ShaderMaterial).uniforms.uGlobal.value = Math.min(1, Math.max(0, A * 5.2 - 4.2));
+    this.character.setPresence(Math.min(1, Math.max(0, (A * 5.2 - 3.9) / 1.1)));
+    this.character.update(t, dt, p, cam, this.w, this.h, forceDt === 0);
 
     this.renderer.render(this.scene, cam);
   }
 
   dispose() {
     this.stop();
+    this.character.dispose();
     this.textures.forEach((t) => t.dispose());
     this.scene.traverse((o) => {
       if (o instanceof THREE.Mesh || o instanceof THREE.Points) {

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { gsap, ScrollTrigger, useGSAP } from "@/motion/gsap";
 import { site } from "@/data/site";
-import { prefersReducedMotion, useUI } from "@/lib/store";
+import { heroStage, prefersReducedMotion, setHeroAssemble, setHeroMoon, useUI } from "@/lib/store";
 import type { NightScene } from "@/anime/NightScene";
 
 /**
@@ -51,11 +51,16 @@ export function Hero() {
           return;
         }
         scene.current = s;
+        heroStage.world = s;
         if (reduce) {
-          s.setNinjaDrop(0);
+          s.setAssemble(1);
+          s.setMoonPresence(1);
           s.still();
           return;
         }
+        // apply whatever the intro has already asked for
+        s.setAssemble(heroStage.assemble);
+        s.setMoonPresence(heroStage.moon);
         io = new IntersectionObserver(([e]) => (e.isIntersecting && !document.hidden ? s.start() : s.stop()));
         io.observe(el);
       })
@@ -73,34 +78,56 @@ export function Hero() {
       io?.disconnect();
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("resize", onResize);
+      heroStage.world = null;
       scene.current?.dispose();
       scene.current = null;
     };
   }, []);
 
-  // ── Entry: the shadow drops onto the pole, letters rise ──
+  // ── Entry: the intro's moon has landed; the world assembles, then the name descends ──
   useGSAP(
     () => {
       if (!introDone) return;
       if (prefersReducedMotion()) {
+        setHeroAssemble(1);
+        setHeroMoon(1);
         gsap.set("[data-hl], [data-hf]", { autoAlpha: 1 });
         return;
       }
       introRef.current = false;
-      const drop = { v: 1 };
+      // If the intro was cut short (fail-safe, deep link), finish building the world now.
+      if (heroStage.assemble < 1) {
+        const w = { p: heroStage.assemble };
+        gsap.to(w, { p: 1, duration: 1.4, ease: "power2.out", onUpdate: () => setHeroAssemble(w.p) });
+      }
+      if (heroStage.moon < 1) setHeroMoon(1);
       gsap
-        .timeline({ delay: 0.35 })
+        .timeline({ delay: 0.05 })
+        // the name descends into the night — line by line, letter by letter
         .fromTo(
           "[data-hl]",
-          { yPercent: 110, rotateX: -80, autoAlpha: 0 },
-          { yPercent: 0, rotateX: 0, autoAlpha: 1, duration: 1.2, ease: "expo.out", stagger: { each: 0.035, from: "start" } },
+          { yPercent: -125, rotateX: 75, autoAlpha: 0 },
+          {
+            yPercent: 0,
+            rotateX: 0,
+            autoAlpha: 1,
+            duration: 1.25,
+            ease: "expo.out",
+            stagger: (i) => {
+              const lines = [5, 6, 7];
+              let line = 0;
+              let k = i;
+              while (k >= lines[line] && line < 2) k -= lines[line++];
+              return line * 0.22 + k * 0.04;
+            },
+          },
           0,
         )
-        .fromTo("[data-hf]", { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.8, stagger: 0.07 }, 0.5)
-        .to(drop, { v: 0, duration: 0.9, ease: "bounce.out", onUpdate: () => scene.current?.setNinjaDrop(drop.v) }, 0.9)
+        // then the supporting text, staggered
+        .fromTo("[data-hf]", { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.9, stagger: 0.08 }, 0.75)
         .call(() => {
           introRef.current = true;
-        }, [], 1.1);
+        }, [], 1.3);
     },
     { scope: root, dependencies: [introDone] },
   );
@@ -203,6 +230,10 @@ export function Hero() {
       ptr.on = false;
       scene.current?.leavePointer();
     };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") scene.current?.tap(e.clientX, e.clientY);
+    };
+    el.addEventListener("pointerdown", down);
     window.addEventListener("pointermove", move, { passive: true });
     document.documentElement.addEventListener("pointerleave", leave);
     const st = ScrollTrigger.create({
@@ -221,6 +252,7 @@ export function Hero() {
       gsap.ticker.remove(tick);
       window.removeEventListener("pointermove", move);
       document.documentElement.removeEventListener("pointerleave", leave);
+      el.removeEventListener("pointerdown", down);
       window.removeEventListener("resize", measure);
       st.kill();
     };

@@ -5,6 +5,7 @@ import { gsap, ScrollTrigger, useGSAP } from "@/motion/gsap";
 import { projects, type Project } from "@/data/projects";
 import { prefersReducedMotion, scrollToTarget } from "@/lib/store";
 import { SystemField } from "@/anime/SystemField";
+import { InkField, type InkLook } from "@/anime/InkField";
 import { TransitionLink } from "@/components/ui/TransitionLink";
 
 /**
@@ -18,6 +19,15 @@ import { TransitionLink } from "@/components/ui/TransitionLink";
 const UPPER = "polygon(0% 0%, 100% 0%, 100% 30%, 0% 64%)";
 const LOWER = "polygon(0% 64%, 100% 30%, 100% 100%, 0% 100%)";
 
+/** Each project's ink — flow tied to what the system does, all within black / grey / vermillion. */
+const LOOKS: InkLook[] = [
+  { seed: 1.3, dir: [1.2, 0.2], red: 0.35, turb: 3.2 }, // job queue — streams sideways, partitioned
+  { seed: 4.1, dir: [0.3, -0.9], red: 0.22, turb: 2.4 }, // wallet — settles, ledger-calm
+  { seed: 7.7, dir: [1.5, 0.7], red: 0.55, turb: 4.3 }, // real-time — turbulent, event-driven
+  { seed: 2.6, dir: [-0.7, 0.4], red: 0.75, turb: 3.6 }, // biosecurity — spreading heat
+  { seed: 9.2, dir: [0.2, 0.8], red: 0.2, turb: 2.6 }, // medipro — rising, steady
+];
+
 export function Cuts() {
   const root = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -25,6 +35,8 @@ export function Cuts() {
   const shards = useRef<HTMLDivElement>(null);
   const shake = useRef<HTMLDivElement>(null);
   const field = useRef<SystemField | null>(null);
+  const inkCanvas = useRef<HTMLCanvasElement>(null);
+  const ink = useRef<InkField | null>(null);
   const current = useRef(0);
   const [active, setActive] = useState(0);
   const st = useRef<ScrollTrigger | null>(null);
@@ -53,6 +65,42 @@ export function Cuts() {
     };
   }, []);
 
+  // Ink environment
+  useEffect(() => {
+    const c = inkCanvas.current;
+    if (!c || !InkField.supported()) return;
+    let f: InkField;
+    try {
+      f = new InkField(c, { mobile: window.matchMedia("(max-width: 767.98px)").matches });
+    } catch {
+      return;
+    }
+    f.setLook(LOOKS[0]);
+    ink.current = f;
+    if (prefersReducedMotion()) {
+      f.draw();
+      return () => f.dispose();
+    }
+    let on = false;
+    const io = new IntersectionObserver(([e]) => {
+      on = e.isIntersecting;
+      if (on) f.start();
+      else f.stop();
+    });
+    io.observe(c);
+    const move = (e: PointerEvent) => on && f.setPointer(e.clientX, e.clientY, e.pointerType === "mouse");
+    const resize = () => f.resize();
+    window.addEventListener("pointermove", move, { passive: true });
+    window.addEventListener("resize", resize);
+    return () => {
+      io.disconnect();
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("resize", resize);
+      ink.current = null;
+      f.dispose();
+    };
+  }, []);
+
   // The cut
   const cut = (from: number, to: number) => {
     const scenes = shake.current!.querySelectorAll<HTMLElement>("[data-cut]");
@@ -66,6 +114,15 @@ export function Cuts() {
       else s.setAttribute("inert", "");
     });
     field.current?.setSteps(projects[to].system.steps, !reduce);
+    // the environment answers the new project: a vermillion flood along the slash, then its own ink
+    const k = ink.current;
+    if (k) {
+      const L = LOOKS[to];
+      gsap.killTweensOf(k.look);
+      gsap.to(k.look, { red: L.red, turb: L.turb, dx: L.dir[0], dy: L.dir[1], seed: L.seed, duration: reduce ? 0 : 1.6, ease: "power2.inOut" });
+      if (!reduce) gsap.fromTo(k.look, { flood: 0 }, { flood: 1, duration: 1.15, ease: "power2.out", delay: 0.15 });
+      else k.draw();
+    }
     if (reduce) {
       gsap.fromTo(inn, { opacity: 0 }, { opacity: 1, duration: 0.25 });
       return;
@@ -78,7 +135,7 @@ export function Cuts() {
       const c = out.cloneNode(true) as HTMLElement;
       c.style.visibility = "visible";
       c.style.clipPath = clip;
-      c.style.background = "#080808";
+      c.style.background = "rgba(8,8,8,0.6)";
       c.setAttribute("aria-hidden", "true");
       c.setAttribute("inert", "");
       c.removeAttribute("data-cut");
@@ -144,6 +201,7 @@ export function Cuts() {
       </h2>
       <div ref={stage} className="relative h-[100svh] overflow-hidden bg-ink">
         <div ref={shake} className="absolute inset-0">
+        <canvas ref={inkCanvas} aria-hidden className="absolute inset-0 h-full w-full" />
         <canvas ref={canvas} aria-hidden className="absolute inset-0 h-full w-full" />
 
         {projects.map((p, i) => (
