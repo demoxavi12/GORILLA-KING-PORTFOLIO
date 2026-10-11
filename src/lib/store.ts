@@ -60,9 +60,20 @@ export const prefersReducedMotion = () =>
 type HeroWorld = {
   setAssemble(p: number): void;
   setMoonPresence(v: number): void;
+  setCharacterPresence(v: number): void;
+  encounter(): void;
   moonScreen(): { x: number; y: number; d: number };
 };
-export const heroStage: { world: HeroWorld | null; assemble: number; moon: number } = { world: null, assemble: 0, moon: 0 };
+export const heroStage: { world: HeroWorld | null; assemble: number; moon: number; character: number } = {
+  world: null,
+  assemble: 0,
+  moon: 0,
+  character: 0,
+};
+export function setHeroCharacter(v: number) {
+  heroStage.character = v;
+  heroStage.world?.setCharacterPresence(v);
+}
 export function setHeroAssemble(p: number) {
   heroStage.assemble = p;
   heroStage.world?.setAssemble(p);

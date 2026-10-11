@@ -206,8 +206,9 @@ export function paintCity(w: number, h: number) {
   return c;
 }
 
-/** Utility poles + catenary wires. Returns the top of the perch pole in canvas px. */
-export function paintPoles(w: number, h: number, poleXs: number[], perchIndex: number, perchTop: number) {
+/** Utility poles + catenary wires. Returns the top of the perch pole in canvas px.
+ *  The perch is a plain post (`perchWidth` px wide, no crossarms) matching the character's own pole. */
+export function paintPoles(w: number, h: number, poleXs: number[], perchIndex: number, perchTop: number, perchWidth?: number) {
   const [c, x] = canvas(w, h);
   x.fillStyle = "#040405";
   x.strokeStyle = "#040405";
@@ -215,8 +216,12 @@ export function paintPoles(w: number, h: number, poleXs: number[], perchIndex: n
   const poleW = Math.max(10, w * 0.009);
   poleXs.forEach((fx, i) => {
     const px = fx * w;
-    const top = h * (i === perchIndex ? perchTop : perchTop + 0.04 + (i % 2) * 0.05);
-    x.fillRect(px - poleW / 2, top, poleW, h - top);
+    const perch = i === perchIndex;
+    const top = h * (perch ? perchTop : perchTop + 0.04 + (i % 2) * 0.05);
+    const pwid = perch && perchWidth ? perchWidth : poleW;
+    x.fillRect(px - pwid / 2, top, pwid, h - top);
+    tops.push({ x: px, y: top });
+    if (perch && perchWidth) return;
     // crossarms + insulators
     [0.05, 0.11].forEach((dy, k) => {
       const ay = top + h * dy;
@@ -226,7 +231,6 @@ export function paintPoles(w: number, h: number, poleXs: number[], perchIndex: n
     });
     // transformer on one pole
     if (i === (perchIndex + 1) % poleXs.length) x.fillRect(px - poleW * 1.6, top + h * 0.17, poleW * 3.2, h * 0.06);
-    tops.push({ x: px, y: top });
   });
   // wires between poles and off-canvas
   const anchors = [{ x: -w * 0.1, y: h * 0.45 }, ...tops.map((t) => ({ x: t.x, y: t.y + h * 0.05 })), { x: w * 1.1, y: h * 0.4 }];

@@ -72,6 +72,7 @@ export class NightScene {
   private moonSize = 1;
   private assemble = 0;
   private moonPresence = 0;
+  private characterPresence = 0;
 
   constructor(private host: HTMLElement, opts: { particles: number; dpr: number }) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
@@ -188,17 +189,18 @@ export class NightScene {
     const perchTop = 0.5 + ((portrait ? 0.47 : 0.52) - 0.5) / margin;
     const poleXs = portrait ? [0.08, perchX] : [0.04, 0.33, perchX, 0.97];
     const perchIndex = portrait ? 1 : 2;
-    const { canvas: poles, perch } = paintPoles(pw, ph, poleXs, perchIndex, perchTop);
-    this.plane(poles, poleZ, f.w, f.h, 0, { order: 3.5, rise: f.h * 0.18 });
-    // perch in world coords
-    this.perchWorld.set((perch.x / pw - 0.5) * f.w, (0.5 - perch.y / ph) * f.h, poleZ + 0.05);
-
-    // The character: stands on the perch, silhouetted against the moon
+    // The character: crouched on the perch, silhouetted against the moon.
+    // Built first so the perch post can match the width of his own pole.
     const visible = this.frame(poleZ).h;
     // textures arrive async: if nothing is animating (reduced motion), redraw the still frame
-    this.character = new HeroCharacter(visible * (portrait ? 0.27 : 0.4), () => {
+    this.character = new HeroCharacter(visible * (portrait ? 0.2 : 0.27), () => {
       if (!this.running) this.tick(0);
     });
+    const perchWidthPx = (this.character.poleWidth / f.w) * pw * 0.98;
+    const { canvas: poles, perch } = paintPoles(pw, ph, poleXs, perchIndex, perchTop, perchWidthPx);
+    this.plane(poles, poleZ, f.w, f.h, 0, { order: 3.5, rise: f.h * 0.18 });
+    // perch in world coords (a hair above the post's top edge, under his feet)
+    this.perchWorld.set((perch.x / pw - 0.5) * f.w, (0.5 - perch.y / ph) * f.h, poleZ + 0.05);
     this.character.placeOn(this.perchWorld);
     this.character.onRelease = (o) => this.impulse(o);
     this.scene.add(this.character.group);
@@ -290,6 +292,16 @@ export class NightScene {
   /** 0 → only the night sky, 1 → the whole world in place. */
   setAssemble(p: number) {
     this.assemble = p;
+  }
+
+  /** The character is revealed last, after the type, text and environment. */
+  setCharacterPresence(v: number) {
+    this.characterPresence = v;
+  }
+
+  /** Keyboard / programmatic encounter. */
+  encounter() {
+    this.character.encounter();
   }
 
   /** The moon (and its glow), handed over from the intro's moon. */
@@ -429,7 +441,7 @@ export class NightScene {
       if (l.rise) l.mesh.position.y = l.base.y - (1 - e) * l.rise;
     }
     (this.points.material as THREE.ShaderMaterial).uniforms.uGlobal.value = Math.min(1, Math.max(0, A * 5.2 - 4.2));
-    this.character.setPresence(Math.min(1, Math.max(0, (A * 5.2 - 3.9) / 1.1)));
+    this.character.setPresence(this.characterPresence);
     this.character.update(t, dt, p, cam, this.w, this.h, forceDt === 0);
 
     this.renderer.render(this.scene, cam);

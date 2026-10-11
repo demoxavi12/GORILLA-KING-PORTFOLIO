@@ -5,39 +5,42 @@ import { usePathname } from "next/navigation";
 import { gsap, ScrollTrigger } from "@/motion/gsap";
 import { site } from "@/data/site";
 import { archive } from "@/data/archive";
+import { lqip } from "@/data/lqip";
 import { heroStage, prefersReducedMotion, scroller, scrollToTarget, setHeroAssemble, setHeroMoon, ui } from "@/lib/store";
-import { paintMoon } from "@/anime/paint";
 
 /**
- * Opening — docs/18_CREATIVE_DIRECTION_V2.md §4 (V2.2).
+ * Opening — the original V2 sequence (restored from commit 4088ca2), docs/18 §4.
+ *  Arrival:        a wall of archive photographs flipping, accelerating, bleeding ember.
+ *  Recognition:    the name slams in as a knockout — the photographs flip inside the letters.
+ *  Tension:        the letters flood solid. Silence. Black. A moon rises.
+ *  Return:         (replaces the runner) the moon travels back to its place in the hero
+ *                  sky and settles; the hero then reveals type → text → environment →
+ *                  character (Hero.tsx).
  *
- *  Arrival      the photo wall is server-rendered: it IS the first painted frame, no
- *               blank screen. It starts flipping the moment the page hydrates.
- *  Recognition  SABYA / SACHIN / MOHANTA slam in as a knockout over the flipping wall.
- *  Tension      silence; black; a moon rises and holds.
- *  Return       the moon travels on an arc back to its place in the sky and lands
- *               exactly on the 3D moon; the night assembles around it; the name
- *               descends (Hero.tsx).
- *
- * Every full load plays from frame 0. Any key/click skips to the moon.
+ * No black first frame: the wall is server-rendered with the same geometry V2 measured
+ * in JS (CSS grid, 3/4/6 columns, 1:1.28 cells), each cell carries an inline 12px
+ * placeholder of its photograph, and the timeline starts on hydration.
  */
 
 /** QA-only: scripts set this to get the short cut on "/" (the app itself never sets it). */
 const QA_SHORT = "kage:qa-short";
 const FRAMES = archive.map((f) => f.src);
-const CELLS = 42; // 6 × 7 covers a portrait desktop; extra rows are clipped on phones
+const CELLS = 42; // 6 × 7 covers a portrait desktop; extra rows are clipped
+
+const MOON_BG =
+  "radial-gradient(circle at 34% 30%, rgba(255,255,255,.65), transparent 38%), radial-gradient(circle at 62% 58%, rgba(170,160,140,.35) 0 6%, transparent 7%), radial-gradient(circle at 30% 64%, rgba(170,160,140,.28) 0 4%, transparent 5%), radial-gradient(circle at 70% 30%, rgba(170,160,140,.25) 0 3%, transparent 4%), var(--color-moon)";
 
 export function Intro() {
   const pathname = usePathname();
   const home = pathname === "/";
   const root = useRef<HTMLDivElement>(null);
   const plate = useRef<HTMLDivElement>(null);
-  const moon = useRef<HTMLCanvasElement>(null);
+  const moon = useRef<HTMLDivElement>(null);
   const [gone, setGone] = useState(false);
+  // Skip intent is captured from the very first frame (layout.tsx catches pre-hydration keys).
   const skipWanted = useRef(false);
   const skipNow = useRef<(() => void) | null>(null);
 
-  // Skip intent is captured from the very first frame (layout.tsx catches pre-hydration keys).
   useEffect(() => {
     if ((window as Window & { __kageSkip?: number }).__kageSkip) skipWanted.current = true;
     const want = () => {
@@ -61,13 +64,13 @@ export function Intro() {
       return () => cancelAnimationFrame(id);
     }
     const q = gsap.utils.selector(el);
-    let short = !home;
+    // Every full load plays from frame 0. Deep links (/work/…) get the short cut.
+    let seen = !home;
     try {
-      if (sessionStorage.getItem(QA_SHORT) === "1") short = true;
+      if (sessionStorage.getItem(QA_SHORT) === "1") seen = true;
     } catch {}
     const W = window.innerWidth;
     const H = window.innerHeight;
-
     // Pin the page to the top while the intro owns the screen.
     const hash = window.location.hash;
     const toTop = () => {
@@ -78,14 +81,7 @@ export function Intro() {
     setHeroAssemble(0);
     setHeroMoon(0);
 
-    // The intro's moon is painted with the same painter as the 3D moon — the handoff is seamless.
-    const mc = moon.current!;
-    const painted = paintMoon(1024);
-    mc.width = 1024;
-    mc.height = 1024;
-    mc.getContext("2d")!.drawImage(painted, 0, 0);
-
-    // ── photo wall: flip only what has loaded ───────────
+    // ── flip wall: flips only use photographs that have loaded ──
     const loaded: string[] = [];
     FRAMES.forEach((src) => {
       const im = new Image();
@@ -109,20 +105,32 @@ export function Intro() {
       flipTimer = window.setTimeout(flip, cadence.ms);
     };
 
-    // ── choreography ────────────────────────────────────
+    // Intro handed over: honour a #hash from the address bar, otherwise stay at the top.
+    const finish = () => {
+      toTop();
+      if (hash && document.querySelector(hash)) {
+        window.setTimeout(() => {
+          ScrollTrigger.refresh();
+          scrollToTarget(hash);
+        }, 2200);
+      }
+    };
+
+    // ── choreography (V2) ───────────────────────────────
     const tl = gsap.timeline({ paused: true, onComplete: () => setGone(true) });
     const shake = (at: number | string) =>
       tl.to(plate.current, { keyframes: { x: [0, -14, 11, -6, 3, 0], y: [0, 8, -6, 3, 0] }, duration: 0.32, ease: "none" }, at);
 
-    if (!short) {
-      tl.call(() => flip(), [], 0)
+    tl.call(toTop, [], 0).fromTo(q("[data-i-meta]"), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4, stagger: 0.06 }, 0);
+
+    if (!seen) {
+      tl.call(() => flip(), [], 0.05)
         .fromTo(q("[data-wall]"), { scale: 1.42, rotate: -2.5 }, { scale: 1, rotate: 0, duration: 2.7, ease: "power2.inOut" }, 0)
         .to(cadence, { ms: 55, duration: 2.3, ease: "power2.in" }, 0.1)
-        .fromTo(q("[data-jp] span"), { yPercent: 110 }, { yPercent: 0, duration: 0.9, stagger: 0.08, ease: "expo.out" }, 0.25)
         .fromTo(q("[data-ember]"), { opacity: 0 }, { opacity: 0.62, duration: 0.9, ease: "power1.in" }, 1.65)
         .addLabel("name", 2.55);
     } else {
-      tl.set(q("[data-wall], [data-jp]"), { autoAlpha: 0 }, 0).addLabel("name", 0.1);
+      tl.set(q("[data-wall]"), { autoAlpha: 0 }, 0).addLabel("name", 0.15);
     }
 
     // Recognition — cut to black, then slam each line
@@ -130,40 +138,40 @@ export function Intro() {
     q<HTMLElement>("[data-i-line]").forEach((line, i) => {
       const at = `name+=${i * 0.16}`;
       tl.fromTo(line, { scale: 2.3, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.42, ease: "expo.out" }, at);
-      if (!short) shake(at);
+      if (!seen) shake(at);
     });
 
-    // Moon handoff geometry, measured when the moon starts to travel
-    const from = { x: W / 2, y: H / 2, d: mc.getBoundingClientRect().width || Math.min(H * 0.7, W * 0.86) };
-    // the painted disc is 96% of its canvas, so sizes are compared as element widths
-    const to = { x: W * 0.66, y: H * 0.36, d: (H * 0.36) / 0.96 };
+    // Moon geometry: from its centred rise to the hero moon's exact place in the sky
+    const from = { x: W / 2, y: H / 2, d: Math.min(H * 0.7, W * 0.86) };
+    const to = { x: W * 0.66, y: H * 0.36, d: H * 0.36 };
     const fly = { t: 0 };
     const build = { p: 0 };
     const placeMoon = () => {
       const t = fly.t;
       const x = from.x + (to.x - from.x) * t;
-      // an arc — up and over, settling into its orbit
-      const y = from.y + (to.y - from.y) * t - Math.sin(Math.PI * t) * H * 0.1;
+      // an arc: up and over, settling into its orbit
+      const y = from.y + (to.y - from.y) * t - Math.sin(Math.PI * t) * H * 0.08;
       const s = (from.d + (to.d - from.d) * gsap.parseEase("power2.inOut")(t)) / from.d;
-      gsap.set(mc, { x: x - W / 2, y: y - H / 2, scale: s, rotate: -9 * (1 - t) });
+      gsap.set(moon.current, { x: x - W / 2, y: y - H / 2, scale: s });
     };
 
-    tl.addLabel("flood", short ? "name+=0.6" : "name+=0.85")
+    tl.addLabel("flood", seen ? "name+=0.6" : "name+=0.85")
       .call(() => {
         wallOn = false;
       }, [], "flood")
       .to(q("[data-wall]"), { autoAlpha: 0, duration: 0.5, ease: "power2.in" }, "flood")
       .to(q("[data-ember]"), { opacity: 0, duration: 0.5 }, "flood")
+      .fromTo(q("[data-i-cap]"), { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.5 }, "flood+=0.25")
       // Tension — hold, then black
-      .addLabel("out", short ? "flood+=0.5" : "flood+=0.8")
+      .addLabel("out", seen ? "flood+=0.55" : "flood+=0.8")
       .to(q("[data-i-line] > span"), { yPercent: -110, duration: 0.42, ease: "power3.in", stagger: 0.04 }, "out")
-      .to(q("[data-i-meta], [data-jp]"), { autoAlpha: 0, duration: 0.3 }, "out")
+      .to(q("[data-i-cap], [data-i-meta]"), { autoAlpha: 0, duration: 0.3 }, "out")
       .to(q("[data-knock]"), { autoAlpha: 0, duration: 0.2 }, "out+=0.4")
-      // The moon rises… and holds
+      // Moon (V2: rises into the centre)
       .addLabel("moon", "out+=0.45")
-      .fromTo(mc, { yPercent: 0, y: H * 0.22, scale: 0.78, autoAlpha: 0 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.8, ease: "power3.out" }, "moon")
-      // …then returns to its place in the sky
-      .addLabel("travel", "moon+=1.05")
+      .fromTo(moon.current, { xPercent: -50, yPercent: -10, scale: 0.75, autoAlpha: 0 }, { xPercent: -50, yPercent: -50, scale: 1, autoAlpha: 1, duration: 0.75, ease: "power3.out" }, "moon")
+      // …and returns to its place in the hero sky
+      .addLabel("return", "moon+=0.85")
       .call(
         () => {
           const world = heroStage.world;
@@ -171,42 +179,39 @@ export function Intro() {
             const m = world.moonScreen();
             to.x = m.x;
             to.y = m.y;
-            to.d = m.d / 0.96;
+            to.d = m.d;
           }
-          const r = mc.getBoundingClientRect();
-          from.d = r.width;
+          from.d = moon.current!.getBoundingClientRect().width;
         },
         [],
-        "travel",
+        "return",
       );
 
     if (home) {
-      tl.to(fly, { t: 1, duration: 1.35, ease: "power3.inOut", onUpdate: placeMoon }, "travel")
-        // the night assembles around the returning moon
-        .to(plate.current, { backgroundColor: "rgba(8,8,8,0)", duration: 0.9, ease: "power2.inOut" }, "travel+=0.25")
-        .to(build, { p: 1, duration: 2.1, ease: "power2.out", onUpdate: () => setHeroAssemble(build.p) }, "travel+=0.15")
-        .call(() => setHeroMoon(1), [], "travel+=1.3")
-        .to(mc, { autoAlpha: 0, duration: 0.35 }, "travel+=1.32")
+      tl.to(fly, { t: 1, duration: 1.3, ease: "power3.inOut", onUpdate: placeMoon }, "return")
+        // the black gives way to the night sky (only the sky — the rest is revealed by the hero)
+        .to(plate.current, { backgroundColor: "rgba(8,8,8,0)", duration: 0.9, ease: "power2.inOut" }, "return+=0.25")
+        .to(build, { p: 0.36, duration: 1.2, ease: "power2.out", onUpdate: () => setHeroAssemble(build.p) }, "return+=0.2")
+        // settle: the 3D moon takes over in place
+        .call(() => setHeroMoon(1), [], "return+=1.25")
+        .to(moon.current, { autoAlpha: 0, duration: 0.45, ease: "power1.inOut" }, "return+=1.28")
         .call(
           () => {
             ui.set({ introDone: true });
-            toTop();
-            if (hash && document.querySelector(hash)) {
-              window.setTimeout(() => {
-                ScrollTrigger.refresh();
-                scrollToTarget(hash);
-              }, 1200);
-            }
+            finish();
           },
           [],
-          "travel+=1.15",
+          "return+=1.45",
         )
-        .to({}, { duration: 0.9 }, "travel+=1.35");
+        .to({}, { duration: 0.2 }, "return+=1.73");
     } else {
-      // no sky to return to on inner pages — the moon sets and the page is revealed
-      tl.to(mc, { y: H * 0.35, autoAlpha: 0, scale: 0.85, duration: 0.8, ease: "power2.in" }, "travel")
-        .to(plate.current, { autoAlpha: 0, duration: 0.6 }, "travel+=0.3")
-        .call(() => ui.set({ introDone: true }), [], "travel+=0.3");
+      // inner pages have no sky to return to: the moon sets and the page is revealed
+      tl.to(moon.current, { y: H * 0.35, autoAlpha: 0, scale: 0.85, duration: 0.8, ease: "power2.in" }, "return")
+        .to(plate.current, { autoAlpha: 0, duration: 0.6 }, "return+=0.3")
+        .call(() => {
+          ui.set({ introDone: true });
+          finish();
+        }, [], "return+=0.3");
     }
 
     const skip = () => {
@@ -246,28 +251,34 @@ export function Intro() {
         {/* Base the letters flood to once the wall is gone */}
         <div data-knock className="absolute inset-0 bg-bone" />
 
-        {/* The photo wall — server-rendered, so it is the first painted frame */}
+        {/* The flip wall — V2 geometry, server-rendered so it is the first painted frame */}
         {home && (
-          <div data-wall className="absolute inset-0 grid grid-cols-3 content-start sm:grid-cols-4 lg:grid-cols-6" style={{ perspective: "900px" }}>
-            {Array.from({ length: CELLS }).map((_, i) => (
-              <div
-                key={i}
-                data-cell
-                className="relative aspect-[1/1.28] overflow-hidden bg-[#121214]"
-                style={{ transformOrigin: i % 2 ? "left center" : "right center" }}
-              >
-                <span className="meta absolute left-2 top-2 text-[0.6rem] text-ash/60">{archive[i % archive.length].id}</span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={FRAMES[i % FRAMES.length]}
-                  alt=""
-                  loading={i < 18 ? "eager" : "lazy"}
-                  fetchPriority={i < 6 ? "high" : "auto"}
-                  decoding="async"
-                  className="relative h-full w-full object-cover [filter:brightness(1.35)_contrast(1.08)_saturate(1.15)]"
-                />
-              </div>
-            ))}
+          <div
+            data-wall
+            className="absolute inset-0 grid grid-cols-3 content-start sm:grid-cols-4 lg:grid-cols-6"
+            style={{ perspective: "900px", transform: "scale(1.42) rotate(-2.5deg)" }}
+          >
+            {Array.from({ length: CELLS }).map((_, i) => {
+              const src = FRAMES[i % FRAMES.length];
+              return (
+                <div
+                  key={i}
+                  data-cell
+                  className="relative aspect-[1/1.28] overflow-hidden bg-ink bg-cover bg-center"
+                  style={{ transformOrigin: i % 2 ? "left center" : "right center", backgroundImage: lqip[src] ? `url(${lqip[src]})` : undefined }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt=""
+                    loading="eager"
+                    fetchPriority={i < 6 ? "high" : "auto"}
+                    decoding="async"
+                    className="h-full w-full object-cover [filter:brightness(1.35)_contrast(1.08)_saturate(1.15)]"
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
         <div data-ember className="absolute inset-0 bg-ember opacity-0 mix-blend-multiply" />
@@ -281,31 +292,30 @@ export function Intro() {
             </div>
           ))}
         </div>
-
-        {/* 影の記録 — "record of shadows": the archive's title, set vertically over the wall */}
-        <p
-          data-jp
-          className="absolute right-[var(--pad)] top-1/2 -translate-y-1/2 overflow-hidden text-[clamp(2.4rem,6vh,4.6rem)] font-bold leading-[1.05] text-bone mix-blend-difference [writing-mode:vertical-rl]"
-        >
-          {"影の記録".split("").map((c, i) => (
-            <span key={i} className="inline-block">
-              {c}
-            </span>
-          ))}
+        <p data-i-cap className="meta absolute inset-x-0 bottom-[12vh] text-center text-bone" style={{ visibility: "hidden" }}>
+          {site.role} — {site.focus}
         </p>
 
         {/* micro typography */}
         <div className="meta absolute inset-x-0 top-0 flex h-[var(--header-h)] items-center justify-between px-pad text-bone mix-blend-difference">
           <span data-i-meta>影 — {site.initials}</span>
+          <span data-i-meta>Archive · {String(FRAMES.length).padStart(3, "0")} frames</span>
+        </div>
+        <div className="meta absolute inset-x-0 bottom-0 flex items-center justify-between px-pad pb-5 text-bone mix-blend-difference">
+          <span data-i-meta>● Rec</span>
           <span data-i-meta>Press any key to skip</span>
         </div>
       </div>
 
-      {/* The moon — outside the plate so it survives the plate dissolving */}
-      <canvas
+      {/* The moon (V2) — outside the plate so it survives the plate dissolving */}
+      <div
         ref={moon}
         className="absolute left-1/2 top-1/2 aspect-square w-[min(70vh,86vw)] rounded-full"
-        style={{ visibility: "hidden", marginLeft: "calc(min(70vh, 86vw) / -2)", marginTop: "calc(min(70vh, 86vw) / -2)", filter: "drop-shadow(0 0 60px rgba(236,230,214,.22))" }}
+        style={{
+          visibility: "hidden",
+          background: MOON_BG,
+          boxShadow: "0 0 120px 30px rgba(236,230,214,.18), 0 0 260px 80px rgba(224,72,44,.08)",
+        }}
       />
     </div>
   );

@@ -38,7 +38,7 @@ src/data/        all content — unchanged sourcing rules
 scripts/         visual QA (shots, rapid screencast, flows, audit); needs a local Chrome
 ```
 
-All artwork is drawn in code: the ninja is an original procedural figure, and the night is painted onto canvases. No anime assets, characters or third-party art are used.
+The night is painted in code onto canvases. The hero figure is cut out of a supplied reference image by `scripts/cutout-itachi.py` (output in `public/characters/`). It depicts a copyrighted character (Itachi Uchiha), so replace the reference with licensed or commissioned art before publishing. Re-running the script swaps the figure without code changes.
 
 ## Reduced motion
 No intro, no pins, no particles or loops. The hero renders as a single still frame, the archive is a grid, and the cuts cross-fade. Everything stays readable.

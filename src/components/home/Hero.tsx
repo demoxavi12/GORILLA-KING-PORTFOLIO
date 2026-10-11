@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { gsap, ScrollTrigger, useGSAP } from "@/motion/gsap";
 import { site } from "@/data/site";
-import { heroStage, prefersReducedMotion, setHeroAssemble, setHeroMoon, useUI } from "@/lib/store";
+import { heroStage, prefersReducedMotion, setHeroAssemble, setHeroCharacter, setHeroMoon, useUI } from "@/lib/store";
 import type { NightScene } from "@/anime/NightScene";
 
 /**
@@ -55,12 +55,14 @@ export function Hero() {
         if (reduce) {
           s.setAssemble(1);
           s.setMoonPresence(1);
+          s.setCharacterPresence(1);
           s.still();
           return;
         }
         // apply whatever the intro has already asked for
         s.setAssemble(heroStage.assemble);
         s.setMoonPresence(heroStage.moon);
+        s.setCharacterPresence(heroStage.character);
         io = new IntersectionObserver(([e]) => (e.isIntersecting && !document.hidden ? s.start() : s.stop()));
         io.observe(el);
       })
@@ -91,43 +93,31 @@ export function Hero() {
       if (prefersReducedMotion()) {
         setHeroAssemble(1);
         setHeroMoon(1);
+        setHeroCharacter(1);
         gsap.set("[data-hl], [data-hf]", { autoAlpha: 1 });
         return;
       }
       introRef.current = false;
-      // If the intro was cut short (fail-safe, deep link), finish building the world now.
-      if (heroStage.assemble < 1) {
-        const w = { p: heroStage.assemble };
-        gsap.to(w, { p: 1, duration: 1.4, ease: "power2.out", onUpdate: () => setHeroAssemble(w.p) });
-      }
       if (heroStage.moon < 1) setHeroMoon(1);
+      // Order: the moon has settled → the name comes down → supporting text →
+      // the night around it assembles → Itachi appears on the post, last.
+      const world = { p: Math.min(heroStage.assemble, 0.36) };
+      const figure = { p: heroStage.character };
       gsap
-        .timeline({ delay: 0.05 })
-        // the name descends into the night — line by line, letter by letter
+        .timeline({ delay: 0.15 })
+        // V2's original descent: one continuous letter-by-letter stagger
         .fromTo(
           "[data-hl]",
           { yPercent: -125, rotateX: 75, autoAlpha: 0 },
-          {
-            yPercent: 0,
-            rotateX: 0,
-            autoAlpha: 1,
-            duration: 1.25,
-            ease: "expo.out",
-            stagger: (i) => {
-              const lines = [5, 6, 7];
-              let line = 0;
-              let k = i;
-              while (k >= lines[line] && line < 2) k -= lines[line++];
-              return line * 0.22 + k * 0.04;
-            },
-          },
+          { yPercent: 0, rotateX: 0, autoAlpha: 1, duration: 1.2, ease: "expo.out", stagger: 0.035 },
           0,
         )
-        // then the supporting text, staggered
-        .fromTo("[data-hf]", { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.9, stagger: 0.08 }, 0.75)
+        .fromTo("[data-hf]", { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.9, stagger: 0.07 }, 0.95)
+        .to(world, { p: 1, duration: 1.6, ease: "power2.out", onUpdate: () => setHeroAssemble(world.p) }, 1.2)
+        .to(figure, { p: 1, duration: 0.9, ease: "power2.out", onUpdate: () => setHeroCharacter(figure.p) }, 2.45)
         .call(() => {
           introRef.current = true;
-        }, [], 1.3);
+        }, [], 2.6);
     },
     { scope: root, dependencies: [introDone] },
   );
@@ -278,7 +268,8 @@ export function Hero() {
           },
         })
         .to(dive, { p: 1, duration: 1 }, 0)
-        .to("[data-hf]", { autoAlpha: 0, duration: 0.15 }, 0)
+        // opacity, not autoAlpha: autoAlpha would un-hide the text before the entry reveals it
+        .to("[data-hf]", { opacity: 0, duration: 0.15 }, 0)
         .to(
           letters,
           {
@@ -381,6 +372,17 @@ export function Hero() {
           Scroll to enter
         </span>
       </div>
+
+      {/* Keyboard alternative to hovering the figure */}
+      {webgl && (
+        <button
+          type="button"
+          onClick={() => scene.current?.encounter()}
+          className="sr-only-focusable meta absolute right-[var(--pad)] top-[calc(var(--header-h)+1rem)] z-10 border border-bone/40 bg-ink/80 px-3 py-2 text-bone"
+        >
+          Approach the figure on the pole
+        </button>
+      )}
 
       {/* Moon white-out → next scene */}
       <div data-flash aria-hidden className="pointer-events-none absolute inset-0 bg-bone opacity-0" />
